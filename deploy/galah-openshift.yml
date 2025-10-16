@@ -1,0 +1,111 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: galah-deployment
+  namespace: galah
+  labels:
+    app: galah
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: galah
+  template:
+    metadata:
+      labels:
+        app: galah
+    spec:
+      containers:
+      - name: galah
+        image: quay.io/smileyfritz/galah-openshift:v0.1.0
+        args:
+          - "-f"               
+          - "/tmp/cache.db"
+          - "-o"   
+          - "/tmp/event_log.json"
+        env:
+        - name: SSL_CERT_FILE
+          value: /etc/pki/tls/certs/ca-bundle.crt
+        - name: LLM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: redhat-maas
+              key: llm-api-key
+        - name: LLM_SERVER_URL
+          valueFrom:
+            secretKeyRef:
+              name: redhat-maas
+              key: llm-server-url
+        - name: LLM_MODEL
+          valueFrom:
+            secretKeyRef:
+              name: redhat-maas
+              key: llm-model
+        - name: LLM_PROVIDER
+          value: openai
+        ports:
+        - containerPort: 8080
+        - containerPort: 8888
+        volumeMounts:
+          - name: galah-config-volume
+            mountPath: /config/config.yaml   # <- relative to workingDir
+            subPath: config.yaml
+          - name: galah-trusted-ca
+            mountPath: /etc/pki/tls/certs/ca-bundle.crt
+            subPath: ca-bundle.crt     
+      volumes:
+      - name: galah-config-volume
+        configMap:
+          name: galah-config
+          items:
+          - key: config-openshift.yaml
+            path: config.yaml
+      - name: galah-trusted-ca
+        configMap:
+          name: galah-trusted-ca
+          items:
+          - key: ca-bundle.crt
+            path: ca-bundle.crt
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: galah-service
+  namespace: galah
+spec:
+  selector:
+    app: galah
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+    - name: http-alt
+      protocol: TCP
+      port: 8888
+      targetPort: 8888
+
+---
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: galah
+  labels:
+    app: galah
+    app.kubernetes.io/name: galah
+    app.kubernetes.io/part-of: galah
+    app.openshift.io/runtime: dotngolanget
+
+spec:
+  port:
+    targetPort: 8080
+  tls:
+    insecureEdgeTerminationPolicy: Redirect
+    termination: edge
+  to:
+    kind: Service
+    name: galah-service
+    weight: 100
+  wildcardPolicy: None
