@@ -59,7 +59,8 @@ spec:
         configMap:
           name: galah-config
           items:
-          - key: config-openshift.yaml
+          - key: config-mimic-ocp-4.12.yaml
+          # - key: config-openshift.yaml
             path: config.yaml
       - name: galah-trusted-ca
         configMap:
