@@ -1,23 +1,23 @@
-# --------- build stage ---------
+# --------- build stage ----------
 FROM golang:1.23 AS builder
 WORKDIR /src
 
-# copy everything
-COPY . .
-
-# download deps
+# copy go mod files first (faster builds)
+COPY go.mod go.sum ./
 RUN go mod download
+
+# now copy the rest
+COPY . .
 
 # build the galah binary
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/galah ./cmd/galah
 
-# --------- runtime stage ---------
+# --------- runtime stage (your image) ----------
 FROM registry.redhat.io/ubi10-micro@sha256:2a820c70ceee2588618f4b1b6116eaa38952b455e1f9fd3a91f7d8afb21c0873
 
-# use a writable path
 WORKDIR /opt/galah
 
-# copy binary + config + templates, but make them owned by 1001:0
+# copy binary + runtime assets, make them owned by 1001:0 for OpenShift
 COPY --from=builder --chown=1001:0 /out/galah /usr/local/bin/galah
 COPY --from=builder --chown=1001:0 /src/config ./config
 COPY --from=builder --chown=1001:0 /src/templates ./templates
