@@ -1,14 +1,28 @@
-FROM golang:latest AS builder
-WORKDIR /galah
-COPY . .
-RUN <<EOF
-go mod download
-go build -o galah ./cmd/galah
-EOF
+# --------- build stage ---------
+FROM golang:1.23 AS builder
+WORKDIR /src
 
+# copy everything
+COPY . .
+
+# download deps
+RUN go mod download
+
+# build the galah binary
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/galah ./cmd/galah
+
+# --------- runtime stage ---------
 FROM registry.redhat.io/ubi10-micro@sha256:2a820c70ceee2588618f4b1b6116eaa38952b455e1f9fd3a91f7d8afb21c0873
-WORKDIR /
-COPY --from=builder /galah/galah /
-EXPOSE 8080
+
+# use a writable path
+WORKDIR /opt/galah
+
+# copy binary + config + templates, but make them owned by 1001:0
+COPY --from=builder --chown=1001:0 /out/galah /usr/local/bin/galah
+COPY --from=builder --chown=1001:0 /src/config ./config
+COPY --from=builder --chown=1001:0 /src/templates ./templates
+
 USER 1001
-ENTRYPOINT ["./galah"]
+EXPOSE 8080
+
+ENTRYPOINT ["galah", "--config-file=/opt/galah/config/config-openshift.yaml", "--event-log-file=/opt/galah/event_log.json", "--cache-db-file=/opt/galah/cache.db"]
